@@ -1,0 +1,17 @@
+{
+  "name": "store-search-tool",
+  "version": "1.0.0",
+  "description": "周辺店舗検索ツール",
+  "main": "build.js",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && open dist/index.html",
+    "start": "node build.js && python -m http.server 8000 --directory dist"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "keywords": ["google-maps", "places-api", "store-search"],
+  "author": "",
+  "license": "MIT"
+} 
