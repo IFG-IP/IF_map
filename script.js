@@ -72,8 +72,8 @@ function initializeElements() {
         showMap: document.getElementById('showMap'),
         clearResults: document.getElementById('clearResults'),
         mapContainer: document.getElementById('mapContainer'),
-        progressFill: document.getElementById('progressFill'),
-        progressText: document.getElementById('progressText'),
+        // progressFill: document.getElementById('progressFill'),
+        // progressText: document.getElementById('progressText'),
         filterInfo: document.getElementById('filterInfo'),
         totalSearched: document.getElementById('totalSearched'),
         duplicateRate: document.getElementById('duplicateRate'),
@@ -510,6 +510,11 @@ function updateSearchControls() {
 
 // 進捗更新
 function updateProgress(current, total, completed = false) {
+    // 進捗バーの要素が存在しない場合は何もしない
+    if (!elements.progressFill || !elements.progressText) {
+        return;
+    }
+    
     if (completed) {
         elements.progressFill.style.width = '100%';
         elements.progressText.textContent = '完了';
