@@ -76,7 +76,10 @@ function initializeElements() {
         progressText: document.getElementById('progressText'),
         filterInfo: document.getElementById('filterInfo'),
         totalSearched: document.getElementById('totalSearched'),
-        duplicateRate: document.getElementById('duplicateRate')
+        duplicateRate: document.getElementById('duplicateRate'),
+        searchToggle: document.getElementById('searchToggle'),
+        searchPanel: document.querySelector('.search-panel'),
+        resultsPanel: document.getElementById('resultsPanel')
     };
     
     // 要素が存在するかチェック
@@ -85,6 +88,9 @@ function initializeElements() {
             console.error(`Element not found: ${key}`);
         }
     }
+    
+    // 初期状態の設定
+    initializeMobileLayout();
 }
 
 // 初期化
@@ -138,9 +144,9 @@ function setupEventListeners() {
     elements.stopSearchBtn.addEventListener('click', stopSearch);
     
     // 結果表示エリアのアクション
-    elements.exportCsvBtn.addEventListener('click', () => {
+    elements.exportCsvBtn.addEventListener('click', async () => {
         if (window.detailedResults) {
-            exportToCSV(window.detailedResults);
+            await exportToCSV(window.detailedResults);
         } else {
             alert('エクスポートする検索結果がありません。');
         }
@@ -152,12 +158,54 @@ function setupEventListeners() {
     // 結果クリア
     elements.clearResults.addEventListener('click', clearResults);
     
+    // 検索パネル切り替え（モバイル用）
+    if (elements.searchToggle) {
+        elements.searchToggle.addEventListener('click', toggleSearchPanel);
+    }
+    
     // 初期値設定
     updateRadiusValue();
     updateRatingValue();
     updateReviewsValue();
     updateMaxResultsValue();
     updateSearchDelayValue();
+}
+
+// モバイルレイアウト初期化
+function initializeMobileLayout() {
+    if (window.innerWidth <= 768) {
+        // スマートフォンでは初期状態で検索パネルを非表示
+        if (elements.searchPanel) {
+            elements.searchPanel.classList.remove('active');
+        }
+        if (elements.resultsPanel) {
+            elements.resultsPanel.classList.add('has-content');
+        }
+        if (elements.searchToggle) {
+            elements.searchToggle.classList.remove('active');
+        }
+    }
+}
+
+// 検索パネル切り替え
+function toggleSearchPanel() {
+    if (elements.searchPanel && elements.searchToggle) {
+        const isActive = elements.searchPanel.classList.contains('active');
+        
+        if (isActive) {
+            // 検索パネルを閉じる
+            elements.searchPanel.classList.remove('active');
+            elements.searchToggle.classList.remove('active');
+            elements.searchToggle.innerHTML = '<i class="fas fa-search"></i>';
+            elements.searchToggle.title = '検索パネルを開く';
+        } else {
+            // 検索パネルを開く
+            elements.searchPanel.classList.add('active');
+            elements.searchToggle.classList.add('active');
+            elements.searchToggle.innerHTML = '<i class="fas fa-times"></i>';
+            elements.searchToggle.title = '検索パネルを閉じる';
+        }
+    }
 }
 
 // 市区町村オプション更新
@@ -786,10 +834,20 @@ function getCategoryKeyword(keyword) {
 
 // 重複除去
 function removeDuplicates(array, key) {
+    console.log('重複除去開始:', array.length, '件');
+    console.log('最初の5件のplace_id:', array.slice(0, 5).map(item => ({ name: item.name, place_id: item[key] })));
+    
     const seen = new Set();
     const duplicates = [];
     const unique = array.filter(item => {
         const value = item[key];
+        
+        // place_idが空または無効な場合はスキップ
+        if (!value || value === '' || value === 'undefined' || value === 'null') {
+            console.warn(`無効な${key}: ${item.name}`, value);
+            return true; // 無効な値は重複として扱わない
+        }
+        
         if (seen.has(value)) {
             duplicates.push(item);
             return false;
@@ -815,8 +873,15 @@ function removeDuplicates(array, key) {
         Object.entries(duplicateGroups).forEach(([name, count]) => {
             console.log(`  - ${name}: ${count}回重複`);
         });
+        
+        // 重複したplace_idの値を確認
+        const duplicateIds = new Set();
+        duplicates.forEach(item => {
+            duplicateIds.add(item[key]);
+        });
+        console.log('重複したplace_id:', Array.from(duplicateIds));
     } else {
-        console.log(`重複除去: ${array.length}件 → ${unique.length}件 (重複なし - 既に除外済み)`);
+        console.log(`重複除去: ${array.length}件 → ${unique.length}件 (重複なし)`);
     }
     
     return unique;
@@ -824,18 +889,29 @@ function removeDuplicates(array, key) {
 
 // 検索結果を表示
 async function displayResults(results, basePlace) {
-    console.log('displayResults called with:', results?.length, 'results');
-    
     if (!results || results.length === 0) {
-        console.log('No results to display');
-        elements.results.innerHTML = '<p>検索結果が見つかりませんでした。</p>';
+        elements.results.innerHTML = `
+            <div class="results-header">
+                <h3 class="results-title">検索結果</h3>
+                <div class="results-summary">
+                    <p>条件に一致する店舗が見つかりませんでした。</p>
+                    <div class="results-actions">
+                        <button id="clearResults" class="btn btn-danger"><i class="fas fa-trash"></i> クリア</button>
+                    </div>
+                </div>
+            </div>
+        `;
         elements.results.classList.remove('hidden');
         return;
     }
-    
+
+    // モバイルレイアウトの状態更新
+    if (window.innerWidth <= 768 && elements.resultsPanel) {
+        elements.resultsPanel.classList.remove('has-content');
+    }
+
     // 重複除去
     const uniqueResults = removeDuplicates(results, 'place_id');
-    console.log('After deduplication:', uniqueResults.length, 'unique results');
     
     // 評価フィルタリング
     const maxRating = parseFloat(elements.minRating.value);
@@ -846,27 +922,22 @@ async function displayResults(results, basePlace) {
             if (!place.rating) return false;
             return place.rating <= maxRating;
         });
-        console.log(`評価フィルタリング: ${uniqueResults.length}件 → ${filteredResults.length}件 (${maxRating}以下)`);
     }
     
     // レビュー数フィルタリング
     const maxReviews = parseInt(elements.minReviews.value);
     if (maxReviews < 1000) {
-        const beforeReviewFilter = filteredResults.length;
         filteredResults = filteredResults.filter(place => {
             if (!place.user_ratings_total) return false;
             return place.user_ratings_total <= maxReviews;
         });
-        console.log(`レビュー数フィルタリング: ${beforeReviewFilter}件 → ${filteredResults.length}件 (${maxReviews}件以下)`);
     }
-    
+
     // 詳細情報を取得
     const detailedResults = await getDetailedResults(filteredResults);
 
     // グローバル変数に詳細結果を保存（CSV出力用）
     window.detailedResults = detailedResults;
-
-    // --- ここから結果表示の更新処理 ---
 
     // 統計情報の計算
     const totalSearched = results.length;
@@ -888,19 +959,8 @@ async function displayResults(results, basePlace) {
     }
     elements.filterInfo.innerHTML = filterInfoHtml;
 
-    // テーブルの内容を生成
-    const tableBodyHtml = detailedResults.map((place, index) => `
-        <tr>
-            <td class="place-name">${place.name}</td>
-            <td class="place-address">${place.formatted_address || place.vicinity || '住所情報なし'}</td>
-            <td class="place-phone">${place.formatted_phone_number || '-'}</td>
-            <td class="place-url">${place.website ? `<a href="${place.website}" target="_blank" class="url-link">${getDomainFromUrl(place.website)}</a>` : '-'}</td>
-            <td class="place-reviews">${place.user_ratings_total || 0}件</td>
-            <td class="place-rating">${place.rating ? `⭐️ ${place.rating.toFixed(1)}` : '-'}</td>
-        </tr>
-    `).join('');
-
-    elements.resultsTable.innerHTML = `
+    // テーブルヘッダー
+    let tableHTML = `
         <table class="results-table">
             <thead>
                 <tr>
@@ -908,21 +968,50 @@ async function displayResults(results, basePlace) {
                     <th>住所</th>
                     <th>電話番号</th>
                     <th>URL</th>
-                    <th>口コミ数</th>
+                    <th>レビュー数</th>
                     <th>評価</th>
                 </tr>
             </thead>
             <tbody>
-                ${tableBodyHtml}
+    `;
+
+    // テーブル行
+    detailedResults.forEach(place => {
+        const rating = place.rating || 0;
+        const userRatingsTotal = place.user_ratings_total || 0;
+        const stars = '★'.repeat(Math.floor(rating)) + '☆'.repeat(5 - Math.floor(rating));
+        
+        tableHTML += `
+            <tr>
+                <td class="place-name">${place.name}</td>
+                <td class="place-address">${place.formatted_address || place.vicinity || '情報なし'}</td>
+                <td class="place-phone">${place.formatted_phone_number || '情報なし'}</td>
+                <td class="place-url">
+                    ${place.website ? `<a href="${place.website}" target="_blank" class="url-link">${getDomainFromUrl(place.website)}</a>` : '情報なし'}
+                </td>
+                <td class="place-reviews">${userRatingsTotal.toLocaleString()}</td>
+                <td class="place-rating">
+                    <div class="rating-display">
+                        <span class="rating-stars">${stars}</span>
+                        <span class="rating-value">${rating.toFixed(1)}</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    tableHTML += `
             </tbody>
         </table>
     `;
 
-    // 結果パネルとダウンロードボタン/リンクを表示
+    elements.resultsTable.innerHTML = tableHTML;
     elements.results.classList.remove('hidden');
-
+    
     // 地図にマーカーを表示
-    displayMarkers(detailedResults, basePlace);
+    if (map && basePlace) {
+        displayMarkers(detailedResults, basePlace);
+    }
 }
 
 // 地図更新（複数座標対応）
@@ -1209,24 +1298,37 @@ function clearResults() {
 }
 
 // CSV出力
-function exportToCSV(results) {
+async function exportToCSV(results) {
     if (!results || results.length === 0) {
         alert('出力するデータがありません。');
         return;
     }
+
+    console.log('CSV出力開始:', results.length, '件のデータ');
+    console.log('最初のデータサンプル:', results[0]);
     
-    // 重複除去とフィルタリングを適用
-    const uniqueResults = removeDuplicates(results, 'place_id');
+    // 詳細情報が不足している場合は再取得
+    let detailedResults = results;
+    if (!results[0].formatted_phone_number && !results[0].website) {
+        console.log('詳細情報が不足しているため、再取得します...');
+        detailedResults = await getDetailedResults(results);
+    } else {
+        console.log('詳細情報は既に取得済みです');
+    }
+
+    // 重複除去は既にdisplayResultsで完了済みなので、ここでは行わない
+    console.log('重複除去済みデータ:', detailedResults.length, '件');
     
     // 評価フィルタリング
     const maxRating = parseFloat(elements.minRating.value);
-    let filteredResults = uniqueResults;
+    let filteredResults = detailedResults;
     
     if (maxRating < 5) {
         filteredResults = filteredResults.filter(place => {
             if (!place.rating) return false;
             return place.rating <= maxRating;
         });
+        console.log('評価フィルタリング後:', filteredResults.length, '件');
     }
     
     // レビュー数フィルタリング
@@ -1236,55 +1338,64 @@ function exportToCSV(results) {
             if (!place.user_ratings_total) return false;
             return place.user_ratings_total <= maxReviews;
         });
+        console.log('レビュー数フィルタリング後:', filteredResults.length, '件');
     }
     
     if (filteredResults.length === 0) {
         alert('フィルタリング条件に合うデータがありません。');
         return;
     }
-    
+
+    console.log('CSV出力対象:', filteredResults.length, '件');
+    console.log('最終サンプルデータ:', filteredResults[0]);
+
     // CSVヘッダー
     const headers = [
         '店舗名',
         '住所', 
         '電話番号',
         'URL',
-        'ドメイン',
-        '評価',
-        '口コミ数',
-        '営業時間',
-        '価格帯',
-        '緯度',
-        '経度'
+        'レビュー数',
+        '評価'
     ];
     
     // CSVデータ
-    const csvData = filteredResults.map(place => {
-        const lat = typeof place.geometry.location.lat === 'function' ? place.geometry.location.lat() : place.geometry.location.lat;
-        const lng = typeof place.geometry.location.lng === 'function' ? place.geometry.location.lng() : place.geometry.location.lng;
+    const csvData = filteredResults.map((place, index) => {
+        const rating = place.rating || 0;
+        const userRatingsTotal = place.user_ratings_total || 0;
         
-        return [
-            place.name || '',
-            place.formatted_address || place.vicinity || '',
-            place.formatted_phone_number || place.international_phone_number || '',
-            place.website || '',
-            place.website ? getDomainFromUrl(place.website) : '',
-            place.rating ? place.rating.toFixed(1) : '',
-            place.user_ratings_total || 0,
-            place.opening_hours ? (place.opening_hours.isOpen ? '営業中' : '営業時間外') : '',
-            place.price_level ? '¥'.repeat(place.price_level) : '',
-            lat,
-            lng
+        // Excelでの表示を最適化
+        const row = [
+            (place.name || '').trim(), // 店舗名の前後の空白を除去
+            (place.formatted_address || place.vicinity || '').trim(), // 住所の前後の空白を除去
+            (place.formatted_phone_number || '').trim(), // 電話番号の前後の空白を除去
+            (place.website || '').trim(), // URLの前後の空白を除去
+            userRatingsTotal.toString(), // レビュー数を文字列に変換
+            rating.toFixed(1) // 評価を小数点1位で表示
         ];
+
+        // デバッグ用：電話番号とURLの情報をログ出力（最初の5件のみ）
+        if (place.name && index < 5) {
+            console.log(`${index + 1}. ${place.name}: 電話番号=${place.formatted_phone_number || 'なし'}, URL=${place.website || 'なし'}`);
+        }
+
+        return row;
     });
     
-    // CSV文字列を生成
+    // Excel用のCSV形式で出力
+    // 適切なエスケープ処理により、Excelで開いた際に列幅が自動調整される
     const csvContent = [
         headers.join(','),
-        ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
+        ...csvData.map(row => row.map(cell => {
+            // セル内にカンマ、改行、ダブルクォートが含まれる場合は適切にエスケープ
+            if (cell.includes(',') || cell.includes('\n') || cell.includes('"')) {
+                return `"${cell.replace(/"/g, '""')}"`;
+            }
+            return cell;
+        }).join(','))
     ].join('\n');
     
-    // ファイル名を生成
+    // ファイル名を生成（拡張子を.csvに戻す）
     const now = new Date();
     const timestamp = now.getFullYear() + 
         String(now.getMonth() + 1).padStart(2, '0') + 
@@ -1294,7 +1405,7 @@ function exportToCSV(results) {
     
     const filename = `周辺店舗検索結果_${timestamp}.csv`;
     
-    // ダウンロード
+    // ダウンロード（CSV形式）
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1302,7 +1413,7 @@ function exportToCSV(results) {
     link.click();
     
     console.log(`CSV出力完了: ${filteredResults.length}件のデータを${filename}に出力`);
-    alert(`CSVファイルをダウンロードしました。\nファイル名: ${filename}\n出力件数: ${filteredResults.length}件`);
+    alert(`CSVファイルをダウンロードしました。\nファイル名: ${filename}\n出力件数: ${filteredResults.length}件\n\n※ Excelで開くと列幅が自動調整されます。`);
 }
 
 // 地図表示切り替え
@@ -1481,32 +1592,48 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function getDetailedResults(results) {
-    console.log('詳細情報を取得中...');
+    console.log('詳細情報を取得中...', results.length, '件');
     const detailedResults = [];
-    const promises = results.map(async (place) => {
+    
+    // レート制限を避けるため、順次処理
+    for (let i = 0; i < results.length; i++) {
+        const place = results[i];
         try {
             if (!place.place_id || typeof place.place_id !== 'string' || place.place_id.trim() === '') {
                 console.warn(`無効なplace_id: ${place.name}`, place.place_id);
-                return place; // 元の情報を使用
+                detailedResults.push(place); // 元の情報を使用
+                continue;
             }
-            return await getPlaceDetails(place.place_id);
+            
+            console.log(`詳細情報取得中: ${i + 1}/${results.length} - ${place.name}`);
+            const detailedPlace = await getPlaceDetails(place.place_id);
+            
+            // 詳細情報が取得できた場合のみ詳細情報を使用、そうでなければ元の情報を使用
+            if (detailedPlace && detailedPlace.name) {
+                detailedResults.push(detailedPlace);
+                console.log(`詳細情報取得完了: ${i + 1}/${results.length} - ${detailedPlace.name} (電話: ${detailedPlace.formatted_phone_number || 'なし'}, URL: ${detailedPlace.website || 'なし'})`);
+            } else {
+                console.warn(`詳細情報が空: ${place.name} - 元の情報を使用`);
+                detailedResults.push(place);
+            }
+            
+            // API制限を避けるため、リクエスト間に待機時間を設定
+            if (i < results.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 200)); // 200ms待機
+            }
+            
         } catch (error) {
             console.warn(`詳細情報取得失敗: ${place.name}`, error.message);
-            return place; // 元の情報を使用
+            detailedResults.push(place); // エラー時は元の情報を保持
+            
+            // エラー時は少し長めに待機
+            if (i < results.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 500)); // 500ms待機
+            }
         }
-    });
-
-    const settledResults = await Promise.allSettled(promises);
-
-    settledResults.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-            detailedResults.push(result.value);
-            console.log(`詳細情報取得完了: ${index + 1}/${results.length} - ${result.value.name}`);
-        } else {
-            detailedResults.push(results[index]); // エラー時は元の情報を保持
-            console.log(`詳細情報取得でエラーが発生: ${index + 1}/${results.length} - ${results[index].name}`);
-        }
-    });
+    }
     
+    console.log(`詳細情報取得完了: ${detailedResults.length}件`);
+    console.log('サンプルデータ:', detailedResults[0]);
     return detailedResults;
 } 
