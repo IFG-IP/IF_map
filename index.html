@@ -17,20 +17,99 @@
         </header>
 
         <div class="main-content">
-            <!-- <div class="search-panel">
-                ...（検索パネルの内容をすべてコメントアウト）...
-            </div> -->
+            <div class="search-panel">
+                <div class="form-group">
+                    <label for="prefecture">都道府県</label>
+                    <select id="prefecture" class="form-control">
+                        <option value="">指定なし</option>
+                        <option value="北海道">北海道</option>
+                        <option value="東京都">東京都</option>
+                        <option value="大阪府">大阪府</option>
+                        <option value="愛知県">愛知県</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="city">市区町村</label>
+                    <select id="city" class="form-control">
+                        <option value="">指定なし</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="storeName">店舗名</label>
+                    <div class="input-container">
+                        <input type="text" id="storeName" class="form-control" placeholder="店舗名を入力（例: スターバックス）">
+                        <div id="suggestions" class="suggestions"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="keywords">フリーワード（改行で複数入力）</label>
+                    <textarea id="keywords" class="form-control" rows="3" placeholder="飲食&#10;ペットサロン&#10;コンビニ"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="radius">検索半径</label>
+                    <div class="slider-container">
+                        <input type="range" id="radius" min="500" max="20000" step="500" value="3000" class="slider">
+                        <span id="radiusValue">3000m</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="minRating">最大評価</label>
+                    <div class="slider-container">
+                        <input type="range" id="minRating" min="0" max="5" step="0.5" value="5" class="slider">
+                        <span id="ratingValue">5.0以下</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="minReviews">最大レビュー数</label>
+                    <div class="slider-container">
+                        <input type="range" id="minReviews" min="0" max="1000" step="10" value="1000" class="slider">
+                        <span id="reviewsValue">指定なし</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="maxResults">最大取得件数</label>
+                    <div class="slider-container">
+                        <input type="range" id="maxResults" min="10" max="100" step="10" value="50" class="slider">
+                        <span id="maxResultsValue">50件</span>
+                    </div>
+                    <small style="color: #666; font-size: 0.8rem;">※ 重複除外後の表示件数です</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="searchDelay">検索間隔（秒）</label>
+                    <div class="slider-container">
+                        <input type="range" id="searchDelay" min="0.5" max="3" step="0.1" value="1.5" class="slider">
+                        <span id="searchDelayValue">1.5秒</span>
+                    </div>
+                </div>
+
+                <div class="search-controls">
+                    <button id="searchBtn" class="btn btn-primary">
+                        <i class="fas fa-search"></i> 検索開始
+                    </button>
+                    <button id="stopSearchBtn" class="btn btn-danger hidden">
+                        <i class="fas fa-stop"></i> 検索停止
+                    </button>
+                </div>
+            </div>
 
             <div class="results-panel" id="resultsPanel">
                 <div id="loading" class="loading hidden">
                     <div class="spinner"></div>
                     <p>検索中...</p>
-                    <div id="searchProgress" class="search-progress">
+                    <!-- <div id="searchProgress" class="search-progress">
                         <div class="progress-bar">
                             <div id="progressFill" class="progress-fill"></div>
                         </div>
                         <span id="progressText">0%</span>
-                    </div>
+                    </div> -->
                 </div>
 
                 <div id="results" class="results hidden">
@@ -59,9 +138,9 @@
         </div>
         
         <!-- スマートフォン用検索パネル切り替えボタン -->
-        <!-- <button id="searchToggle" class="search-toggle" title="検索パネルを開く">
+        <button id="searchToggle" class="search-toggle" title="検索パネルを開く">
             <i class="fas fa-search"></i>
-        </button> -->
+        </button>
     </div>
 
     <script src="script.js"></script>
