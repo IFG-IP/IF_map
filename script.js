@@ -195,6 +195,7 @@ let autocompleteService;
 let placesService;
 let searchResults = [];
 let selectedPlace = null;
+let isLoadingPlaceDetails = false;
 let isSearching = false;
 let searchAbortController = null;
 let elements = {};
@@ -276,17 +277,19 @@ function setupEventListeners() {
     elements.prefecture.addEventListener('change', updateCityOptions);
     
     // 店舗名入力
-    elements.storeName.addEventListener('input', debounce(updateSuggestions, 300));
-    
-    // 店舗名クリア機能
-    elements.storeName.addEventListener('focus', () => {
-        if (selectedPlace) {
-            // 選択済みの場合は選択をクリア
+    const debouncedUpdateSuggestions = debounce(updateSuggestions, 300);
+    elements.storeName.addEventListener('input', event => {
+        const currentValue = event.target.value.trim();
+
+        if (selectedPlace && selectedPlace.name !== currentValue) {
             selectedPlace = null;
             elements.storeName.placeholder = '店舗名を入力（例: スターバックス）';
         }
+
+        debouncedUpdateSuggestions();
     });
     
+
     // スライダー値更新
     elements.radius.addEventListener('input', updateRadiusValue);
     elements.minRating.addEventListener('input', updateRatingValue);
@@ -466,31 +469,39 @@ function displaySuggestions(predictions) {
         `;
         
         item.addEventListener('click', async () => {
-            elements.storeName.value = storeName; // 店舗名のみを設定
+            elements.storeName.value = storeName; // 店舗名のみ設定
             suggestionsDiv.style.display = 'none';
-            
+
+            const searchButtonPreviouslyDisabled = elements.searchBtn.disabled;
+
+            isLoadingPlaceDetails = true;
+
             // ローディング表示
             elements.storeName.disabled = true;
             elements.storeName.placeholder = '店舗情報を取得中...';
-            
+            elements.searchBtn.disabled = true;
+
             try {
                 // 店舗の詳細情報を取得
                 const placeDetails = await getPlaceDetails(prediction.place_id);
                 selectedPlace = placeDetails;
-                
-                console.log('基準店舗が選択されました:', placeDetails.name);
+
+                console.log('基準店舗を選択しました:', placeDetails.name);
                 console.log('座標:', placeDetails.geometry.location.lat(), placeDetails.geometry.location.lng());
-                
-                // 成功メッセージ
+
+                // プレースホルダー更新
                 elements.storeName.placeholder = `${placeDetails.name} (選択済み)`;
-                
+
             } catch (error) {
                 console.error('店舗詳細の取得に失敗:', error);
-                alert('店舗情報の取得に失敗しました。もう一度選択してください。');
+                alert('店舗情報の取得に失敗しました。再度お試しください。');
                 elements.storeName.value = '';
+                elements.storeName.placeholder = '店舗名を入力（例: スターバックス）';
                 selectedPlace = null;
             } finally {
                 elements.storeName.disabled = false;
+                isLoadingPlaceDetails = false;
+                elements.searchBtn.disabled = searchButtonPreviouslyDisabled || isSearching;
             }
         });
         
@@ -542,14 +553,107 @@ function updateSearchDelayValue() {
     elements.searchDelayValue.textContent = `${value}秒`;
 }
 
+// フリーワード検索ユーティリティ
+function parseFreeWordInput(rawInput) {
+    const normalized = (rawInput || '')
+        .replace(/\u3000/g, ' ')
+        .replace(/[、，；；]/g, ',');
+
+    const segments = normalized
+        .split(/\r?\n/)
+        .flatMap(line => line.match(/"[^"]+"|[^,]+/g) || [])
+        .map(token => token.replace(/^"|"$/g, '').trim())
+        .filter(Boolean);
+
+    const expanded = segments.flatMap(token => {
+        const parts = tokenizeKeyword(token);
+        return parts.length > 1 ? [token, ...parts] : [token];
+    });
+
+    return Array.from(new Set(expanded));
+}
+
+function tokenizeKeyword(keyword) {
+    return (keyword || '')
+        .replace(/\u3000/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+}
+
+function resolveTypeFromKeyword(keyword) {
+    if (!keyword) {
+        return null;
+    }
+
+    if (TYPE_MAP[keyword]) {
+        return TYPE_MAP[keyword];
+    }
+
+    for (const token of tokenizeKeyword(keyword)) {
+        if (TYPE_MAP[token]) {
+            return TYPE_MAP[token];
+        }
+    }
+
+    return null;
+}
+
+function createSearchStrategies(keyword) {
+    const normalized = (keyword || '').trim();
+    const tokens = tokenizeKeyword(normalized);
+    const strategies = new Map();
+
+    const register = (kw, type = null) => {
+        const trimmed = (kw || '').trim();
+        if (!trimmed) {
+            return;
+        }
+
+        const key = `${trimmed}|${type || ''}`;
+        if (!strategies.has(key)) {
+            strategies.set(key, { keyword: trimmed, type: type || null });
+        }
+    };
+
+    const baseType = resolveTypeFromKeyword(normalized);
+    register(normalized, baseType);
+    register(normalized, null);
+
+    tokens.forEach(token => {
+        register(token, resolveTypeFromKeyword(token));
+        register(getRelatedKeyword(token), null);
+        register(getCategoryKeyword(token), null);
+    });
+
+    register(getRelatedKeyword(normalized), null);
+    register(getCategoryKeyword(normalized), null);
+
+    if (tokens.length > 1) {
+        tokens.forEach((_, index) => {
+            const partial = tokens.slice(0, index + 1).join(' ');
+            register(partial, resolveTypeFromKeyword(partial));
+        });
+    }
+
+    return Array.from(strategies.values());
+}
+
 // メイン検索処理
 async function performSearch() {
-    const keywords = elements.keywords.value.trim();
-    if (!keywords) {
+    const rawKeywordInput = elements.keywords.value || '';
+    const keywords = rawKeywordInput.trim();
+    const keywordList = parseFreeWordInput(rawKeywordInput);
+    if (keywordList.length === 0) {
         alert('フリーワードを入力してください。');
         return;
     }
-    
+
+    if (isLoadingPlaceDetails) {
+        alert('基準店舗の情報を取得中です。完了までお待ちください。');
+        return;
+    }
+
     if (!selectedPlace) {
         alert('基準店舗を選択してください。');
         return;
@@ -582,8 +686,8 @@ async function performSearch() {
         
         console.log(`基準座標: ${lat}, ${lng}`);
         
-        // キーワードを改行で分割
-        const keywordList = keywords.split('\n').filter(kw => kw.trim());
+        // 正規化済みのキーワード一覧
+        console.log('正規化キーワード一覧:', keywordList);
         const maxResults = parseInt(elements.maxResults.value);
         
         console.log(`=== 検索設定 ===`);
@@ -818,18 +922,7 @@ function performLocationSearch(location, keyword, targetCount, maxRequests, exis
         let consecutiveEmptyResults = 0; // 連続で空の結果をカウント
         
         // より多様な検索戦略を試行
-        const searchStrategies = [
-            // 戦略1: キーワード + タイプ指定
-            { keyword: keyword, type: TYPE_MAP[keyword] || null },
-            // 戦略2: キーワードのみ（タイプ指定なし）
-            { keyword: keyword, type: null },
-            // 戦略3: 関連キーワードで検索
-            { keyword: getRelatedKeyword(keyword), type: null },
-            // 戦略4: より広いカテゴリで検索
-            { keyword: getCategoryKeyword(keyword), type: null },
-            // 戦略5: 部分キーワードで検索
-            { keyword: keyword.split(' ')[0], type: null }
-        ];
+        const searchStrategies = createSearchStrategies(keyword);
         
         let nextPageToken = null;
         let requestCount = 0;
