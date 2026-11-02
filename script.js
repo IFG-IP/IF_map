@@ -461,8 +461,8 @@ function displaySuggestions(predictions) {
         const address = parts.slice(1).join(', ');
         
         item.innerHTML = `
-            <div class="suggestion-name">${storeName}</div>
-            <div class="suggestion-address">${address}</div>
+            <div class="suggestion-name">${escapeHtml(storeName)}</div>
+            <div class="suggestion-address">${escapeHtml(address)}</div>
         `;
         
         item.addEventListener('click', async () => {
@@ -1143,11 +1143,11 @@ async function displayResults(results, basePlace) {
         
         tableHTML += `
             <tr>
-                <td class="place-name">${place.name}</td>
-                <td class="place-address">${place.formatted_address || place.vicinity || '情報なし'}</td>
-                <td class="place-phone">${place.formatted_phone_number || '情報なし'}</td>
+                <td class="place-name">${escapeHtml(place.name)}</td>
+                <td class="place-address">${escapeHtml(place.formatted_address || place.vicinity || '情報なし')}</td>
+                <td class="place-phone">${escapeHtml(place.formatted_phone_number || '情報なし')}</td>
                 <td class="place-url">
-                    ${place.website ? `<a href="${place.website}" target="_blank" class="url-link">${getDomainFromUrl(place.website)}</a>` : '情報なし'}
+                    ${safeUrl(place.website) ? `<a href="${escapeHtml(safeUrl(place.website))}" target="_blank" rel="noopener noreferrer" class="url-link">${escapeHtml(getDomainFromUrl(place.website))}</a>` : '情報なし'}
                 </td>
                 <td class="place-reviews">${userRatingsTotal.toLocaleString()}</td>
                 <td class="place-rating">
@@ -1240,7 +1240,7 @@ function displayMarkers(results, basePlace) {
         const baseInfoWindow = new google.maps.InfoWindow({
             content: `
                 <div style="padding: 10px; max-width: 200px;">
-                    <h4 style="margin: 0 0 5px 0; color: #ff0000;">${basePlace.name}</h4>
+                    <h4 style="margin: 0 0 5px 0; color: #ff0000;">${escapeHtml(basePlace.name)}</h4>
                     <p style="margin: 0; font-size: 12px; color: #666;">基準店舗</p>
                     <p style="margin: 5px 0 0 0; font-size: 11px; color: #999;">
                         検索半径: ${radius}m
@@ -1287,8 +1287,8 @@ function displayMarkers(results, basePlace) {
             const infoWindow = new google.maps.InfoWindow({
                 content: `
                     <div style="padding: 10px; max-width: 200px;">
-                        <h4 style="margin: 0 0 5px 0;">${place.name}</h4>
-                        <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${place.vicinity}</p>
+                        <h4 style="margin: 0 0 5px 0;">${escapeHtml(place.name)}</h4>
+                        <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${escapeHtml(place.vicinity)}</p>
                         ${place.rating ? `
                             <p style="margin: 0; color: #ffc107; font-size: 12px;">
                                 ★ ${place.rating.toFixed(1)} (${place.user_ratings_total || 0}件)
@@ -1347,7 +1347,7 @@ function showPlaceDetails(placeId) {
                     overflow-y: auto;
                     position: relative;
                 ">
-                    <button onclick="this.parentElement.parentElement.remove()" style="
+                    <button class="modal-close-btn" style="
                         position: absolute;
                         top: 15px;
                         right: 15px;
@@ -1358,22 +1358,22 @@ function showPlaceDetails(placeId) {
                         color: #666;
                     ">&times;</button>
                     
-                    <h3 style="margin-bottom: 20px; color: #333;">${place.name}</h3>
+                    <h3 style="margin-bottom: 20px; color: #333;">${escapeHtml(place.name)}</h3>
                     
                     <div style="margin-bottom: 15px;">
-                        <strong>住所:</strong> ${place.formatted_address || '情報なし'}
+                        <strong>住所:</strong> ${escapeHtml(place.formatted_address || '情報なし')}
                     </div>
                     
                     ${place.formatted_phone_number ? `
                         <div style="margin-bottom: 15px;">
-                            <strong>電話番号:</strong> ${place.formatted_phone_number}
+                            <strong>電話番号:</strong> ${escapeHtml(place.formatted_phone_number)}
                         </div>
                     ` : ''}
                     
-                    ${place.website ? `
+                    ${safeUrl(place.website) ? `
                         <div style="margin-bottom: 15px;">
                             <strong>ウェブサイト:</strong> 
-                            <a href="${place.website}" target="_blank" style="color: #667eea;">${getDomainFromUrl(place.website)}</a>
+                            <a href="${escapeHtml(safeUrl(place.website))}" target="_blank" rel="noopener noreferrer" style="color: #667eea;">${escapeHtml(getDomainFromUrl(place.website))}</a>
                         </div>
                     ` : ''}
                     
@@ -1398,6 +1398,7 @@ function showPlaceDetails(placeId) {
             `;
             
             document.body.appendChild(modal);
+            modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.remove());
             
             // モーダル外クリックで閉じる
             modal.addEventListener('click', (e) => {
@@ -1547,6 +1548,11 @@ async function exportToCSV(results) {
     const csvContent = [
         headers.join(','),
         ...csvData.map(row => row.map(cell => {
+            // Excel で数式として実行されないよう、= + - @ で始まるセルは先頭に ' を付ける
+            cell = String(cell ?? '');
+            if (/^[=+\-@\t\r]/.test(cell)) {
+                cell = "'" + cell;
+            }
             // セル内にカンマ、改行、ダブルクォートが含まれる場合は適切にエスケープ
             if (cell.includes(',') || cell.includes('\n') || cell.includes('"')) {
                 return `"${cell.replace(/"/g, '""')}"`;
@@ -1797,3 +1803,22 @@ async function getDetailedResults(results) {
     console.log('サンプルデータ:', detailedResults[0]);
     return detailedResults;
 } 
+// HTML に埋め込む文字列のエスケープ（Google Places の店舗名・住所などは第三者が登録した値のため）
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// http/https 以外（javascript: など）のリンクは表示しない
+function safeUrl(url) {
+    try {
+        const u = new URL(url);
+        return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+    } catch (error) {
+        return '';
+    }
+}

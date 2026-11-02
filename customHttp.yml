@@ -1,0 +1,17 @@
+customHeaders:
+  - pattern: '**'
+    headers:
+      # Google Maps JavaScript API の推奨 CSP（許可リスト方式）に合わせる。Maps は 'unsafe-eval' とインラインスタイルを使う
+      - key: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self' 'unsafe-eval' blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.googleusercontent.com; worker-src blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.googleusercontent.com; connect-src 'self' data: blob: https://*.googleapis.com https://*.google.com https://*.gstatic.com; frame-src https://*.google.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+      - key: X-Frame-Options
+        value: DENY
+      - key: X-Content-Type-Options
+        value: nosniff
+      # Maps API キーの HTTP リファラー制限が効くよう、no-referrer にはしない
+      - key: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - key: Strict-Transport-Security
+        value: max-age=31536000
+      - key: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()
